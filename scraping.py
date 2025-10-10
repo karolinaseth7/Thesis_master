@@ -3,46 +3,54 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from io import StringIO
+from tqdm import tqdm
 
 # ==============================
-# Configuración de fechas
+# CONFIGURACIÓN DE FECHAS
 # ==============================
-start_date = datetime(2025, 10, 7)
+start_date = datetime(2025, 10, 5)
 end_date = datetime.today()
 
 # ==============================
-# Scraping con requests
+# SCRAPING RMCAB
 # ==============================
 all_data = []
-current_date = start_date
 
-while current_date <= end_date:
+for current_date in tqdm(pd.date_range(start_date, end_date), desc="Descargando datos"):
     date_str = current_date.strftime("%Y-%m-%d")
     url = f"http://rmcab.ambientebogota.gov.co/Report/HourlyReports?id=1&UserDateString={date_str}"
-    
+
     try:
-        r = requests.get(url, timeout=15)
+        r = requests.get(url, timeout=20)
         r.raise_for_status()
-        
         soup = BeautifulSoup(r.text, "lxml")
-        
-        # Extraer títulos (estaciones) y tablas
+
         titles = [h2.get_text(strip=True) for h2 in soup.find_all("h2")]
         tables = soup.find_all("table")
-        
-        # Emparejar título con tabla
+
         for title, table in zip(titles, tables):
-            df = pd.read_html(StringIO(str(table)))[0]
+            df = pd.read_html(StringIO(str(table)), decimal=",", thousands=".")[0]
+
+            # Limpieza de encabezados
+            df.columns = [str(c).strip().replace("\n", " ") for c in df.columns]
+
+            # Conversión de valores con coma a punto (si pandas no lo detectó)
+            for col in df.columns:
+                if df[col].dtype == "object":
+                    df[col] = (
+                        df[col]
+                        .astype(str)
+                        .str.replace(".", "", regex=False)  # quita separadores de miles
+                        .str.replace(",", ".", regex=False)  # convierte coma en punto
+                    )
+                    df[col] = pd.to_numeric(df[col], errors="ignore")
+
             df["Fecha"] = date_str
-            df["Estacion"] = title  # ✅ asociar título
+            df["Estacion"] = title
             all_data.append(df)
-        
-        print(f"✅ {date_str} - {len(tables)} tablas descargadas ({len(titles)} títulos)")
-    
+
     except Exception as e:
-        print(f"⚠️ Error en {date_str}: {e}")
-    
-    current_date += timedelta(days=1)
+        print(f"⚠️ Error al procesar {date_str}: {e}")
 
 # ==============================
 # CONSOLIDAR Y GUARDAR RESULTADOS
@@ -50,24 +58,10 @@ while current_date <= end_date:
 if all_data:
     final_df = pd.concat(all_data, ignore_index=True)
 
-    # Limpieza adicional por si hay valores residuales con coma
-    for col in final_df.columns:
-        if final_df[col].astype(str).str.contains(r'\d', regex=True).any():
-            final_df[col] = (
-                final_df[col]
-                .astype(str)
-                .str.replace(".", "", regex=False)   # elimina separador de miles
-                .str.replace(",", ".", regex=False)  # convierte coma en punto
-            )
-            final_df[col] = pd.to_numeric(final_df[col], errors="ignore")
+    output_path = r"C:\Users\analistaaplicacion\Documents\Web_scraping\Scraping\Tesis\rmcab_reportes.csv"
+    final_df.to_csv(output_path, index=False, encoding="utf-8-sig")
 
-
-# ==============================
-# Guardar resultados
-# ==============================
-if all_data:
-    final_df = pd.concat(all_data, ignore_index=True)
-    final_df.to_csv("rmcab_reportes.csv", index=False, encoding="utf-8-sig")
-    print("📁 Archivo guardado como rmcab_reportes.csv")
+    print(f"\n✅ Archivo guardado correctamente en:\n{output_path}")
+    print(f"Total de filas: {len(final_df)}")
 else:
-    print("⚠️ No se extrajo ninguna tabla")
+    print("⚠️ No se extrajo ninguna tabla.")
