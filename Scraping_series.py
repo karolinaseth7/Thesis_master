@@ -9,8 +9,9 @@ from datetime import datetime
 # ==============================
 # CONFIGURACIÓN DE FECHAS
 # ==============================
-start_date = datetime(2024, 10, 10)
-end_date = datetime.today()
+start_date = datetime(2023, 10, 10)
+end_date = datetime(2024, 10, 10)
+# end_date = datetime.today() ##<---- descomentar si es necesario.
 
 # Carpeta de salida
 output_dir = r"C:\Users\analistaaplicacion\Documents\Web_scraping\Scraping\Tesis"
@@ -47,7 +48,13 @@ for current_date in tqdm(pd.date_range(start_date, end_date), desc="Descargando 
                         .str.replace(".", "", regex=False)  # separador de miles
                         .str.replace(",", ".", regex=False)  # coma a punto decimal
                     )
-                    df[col] = pd.to_numeric(df[col], errors="ignore")
+                    # Conversión segura de columnas numéricas (sin usar errors="ignore")
+                    for col in df.columns:
+                        try:
+                            df[col] = pd.to_numeric(df[col])
+                        except (ValueError, TypeError):
+                            pass  # Ignora columnas que no pueden convertirse
+
 
             df["Fecha"] = date_str
             df["Estacion"] = title
